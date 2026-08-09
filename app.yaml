@@ -1,0 +1,9 @@
+command:
+  - python
+  - app.py
+
+env:
+  - name: NWS_USER_AGENT
+    value: "WeatherLensAI/1.0 sergii.volodarskyi@gmail.com"
+  - name: LAKEBASE_CONNECTION_URL
+    valueFrom: lakebase-url

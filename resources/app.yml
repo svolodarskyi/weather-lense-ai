@@ -1,0 +1,14 @@
+resources:
+  apps:
+    weather_lens_ai:
+      name: weather-lens-ai
+      source_code_path: .
+      description: "WeatherLens AI — NWS semantic search and RAG chat"
+
+      resources:
+        - name: lakebase-url
+          description: "Lakebase connection URL"
+          secret:
+            scope: database
+            key: lakebase-url
+            permission: READ
