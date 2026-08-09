@@ -370,24 +370,56 @@ All external boundaries (HTTP, Postgres wire, sentence-transformer encoder) are 
 
 ## Deployment
 
-### App (Flask API)
+Everything is managed by a single Databricks Asset Bundle (`databricks.yml`). One `bundle deploy` provisions the app and the scheduled job together.
+
+### Prerequisites
+
+- Databricks CLI v0.294.0+ authenticated against the target workspace
+- Secret scope `database` with key `lakebase-url` containing the Lakebase connection URL:
+  ```bash
+  databricks secrets create-scope database --profile DEFAULT          # skip if scope exists
+  databricks secrets put-secret database lakebase-url \
+    --string-value "postgresql://user:pass@host/databricks_postgres?sslmode=require" \
+    --profile DEFAULT
+  ```
+- Schema initialised in Lakebase (one-time):
+  ```bash
+  LAKEBASE_CONNECTION_URL="<url>" python - <<'EOF'
+  from lakebase import apply_schema
+  apply_schema()
+  print("Schema ready.")
+  EOF
+  ```
+
+### Deploy
 
 ```bash
-databricks apps deploy weather-lens-ai --profile DEFAULT
-```
+# 1. Clone
+git clone https://github.com/svolodarskyi/weather-lense-ai.git
+cd weather-lense-ai
 
-The app's service principal must be deployed before running locally so it owns the schema. See the Lakebase docs on schema ownership if you hit `permission denied for schema`.
-
-### Scheduled index refresh (Databricks Asset Bundles)
-
-The `databricks.yml` bundle defines a job that syncs NWS data and embeds new documents every 30 minutes.
-
-```bash
-# First-time deploy
+# 2. Deploy app + job
 databricks bundle deploy --profile DEFAULT
 
-# Run immediately (for testing)
+# 3. Start the app
+databricks bundle run weather_lens_ai --profile DEFAULT
+```
+
+The app's service principal automatically gets `READ` access to the `database/lakebase-url` secret via the bundle resource definition — no manual permission grants needed.
+
+### Run the index refresh job
+
+```bash
+# Trigger immediately (for testing or first load)
 databricks bundle run refresh_weather_index --profile DEFAULT
 ```
 
-The schedule is paused by default. Unpause it in the Databricks Jobs UI, or change `pause_status: UNPAUSED` in `resources/refresh_weather_index_job.yml` before deploying.
+The job is scheduled every 30 minutes but starts paused. To enable automatic runs, change `pause_status: UNPAUSED` in `resources/refresh_weather_index_job.yml` and redeploy, or unpause it directly in the Databricks Jobs UI.
+
+### Redeploy after code changes
+
+```bash
+git pull
+databricks bundle deploy --profile DEFAULT
+# App picks up the new source automatically on next start.
+```
