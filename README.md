@@ -398,10 +398,15 @@ Everything is managed by a single Databricks Asset Bundle (`databricks.yml`). On
 git clone https://github.com/svolodarskyi/weather-lense-ai.git
 cd weather-lense-ai
 
-# 2. Deploy app + job
+# 2. Deploy bundle (creates app + job resources)
 databricks bundle deploy --profile DEFAULT
 
-# 3. Start the app
+# 3. Deploy source code to the app
+databricks apps deploy weather-lens-ai \
+  --source-code-path /Workspace/Users/$(databricks current-user me --profile DEFAULT -o json | python3 -c "import json,sys; print(json.load(sys.stdin)['user_name'])")/.bundle/weather-lens-ai/dev/files \
+  --profile DEFAULT
+
+# 4. Start the app (if not already running)
 databricks bundle run weather_lens_ai --profile DEFAULT
 ```
 
@@ -421,5 +426,7 @@ The job is scheduled every 30 minutes but starts paused. To enable automatic run
 ```bash
 git pull
 databricks bundle deploy --profile DEFAULT
-# App picks up the new source automatically on next start.
+databricks apps deploy weather-lens-ai \
+  --source-code-path /Workspace/Users/<your-email>/.bundle/weather-lens-ai/dev/files \
+  --profile DEFAULT
 ```
