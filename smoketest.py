@@ -101,7 +101,6 @@ except Exception as exc:
 print("\n[3] Embedding job (ingest_weather_embeddings)")
 try:
     from notebooks.ingest_weather_embeddings import run as embed_run
-    from embeddings import Encoder, MODEL_NAME
     enc = app_module.encoder          # reuse already-loaded encoder
     n_docs, n_chunks = embed_run(enc)
     check("Embedding job completed", True, f"{n_docs} docs, {n_chunks} chunks")

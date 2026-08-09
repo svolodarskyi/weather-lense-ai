@@ -14,7 +14,7 @@ Both WeatherClient and Encoder are instantiated once at module level:
 """
 
 import os
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 from lakebase import get_lakebase_connection
 from weather_client import WeatherClient
 from embeddings import Encoder, MODEL_NAME
@@ -24,6 +24,11 @@ app = Flask(__name__)
 
 client  = WeatherClient(user_agent=os.getenv("NWS_USER_AGENT", ""))
 encoder = Encoder(MODEL_NAME)
+
+
+@app.get("/")
+def index():
+    return render_template("index.html")
 
 
 @app.get("/health")
