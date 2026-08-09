@@ -1,5 +1,5 @@
 """
-Sprint 3 tests — repository.py (write side).
+Sprint 3 + Sprint 5 tests — repository.py (write side and read side).
 
 psycopg2 is mocked; no real database required.
 """
@@ -208,3 +208,113 @@ class TestClearStaleEmbeddings:
         from repository import clear_stale_embeddings
         result = clear_stale_embeddings(conn)
         assert result == 7
+
+
+# ---------------------------------------------------------------------------
+# search
+# ---------------------------------------------------------------------------
+
+def _make_search_row(doc_id="doc-1", location="Chicago, IL", event="Flood Watch",
+                     source_type="alert", chunk_text="Heavy rain.", distance=0.15):
+    """Return a tuple matching the SELECT column order in _SEARCH_SQL."""
+    return (doc_id, location, event, source_type, chunk_text, doc_id, distance)
+
+
+class TestSearch:
+    _vec = [0.1] * 384
+
+    def _run(self, rows, top_k=5, source_type=None):
+        conn, cursor = _make_conn()
+        cursor.fetchall.return_value = rows
+        from repository import search
+        result = search(conn, self._vec, top_k, source_type=source_type)
+        return result, cursor
+
+    def test_empty_table_returns_empty_list(self):
+        result, _ = self._run([])
+        assert result == []
+
+    def test_returns_result_for_each_unique_doc(self):
+        rows = [_make_search_row("d1"), _make_search_row("d2")]
+        result, _ = self._run(rows, top_k=5)
+        assert len(result) == 2
+
+    def test_deduplicates_by_document_id(self):
+        # Two rows for the same document — only one should appear in results.
+        rows = [
+            _make_search_row("d1", distance=0.1),
+            _make_search_row("d1", distance=0.3),
+        ]
+        result, _ = self._run(rows, top_k=5)
+        assert len(result) == 1
+
+    def test_keeps_lowest_distance_on_dedup(self):
+        # DB already returns rows ordered by distance; first occurrence wins.
+        rows = [
+            _make_search_row("d1", distance=0.1),   # lower distance → kept
+            _make_search_row("d1", distance=0.3),
+        ]
+        result, _ = self._run(rows, top_k=5)
+        assert abs(result[0]["similarity"] - (1.0 - 0.1)) < 1e-5
+
+    def test_similarity_equals_one_minus_distance(self):
+        rows = [_make_search_row("d1", distance=0.25)]
+        result, _ = self._run(rows, top_k=5)
+        assert abs(result[0]["similarity"] - 0.75) < 1e-5
+
+    def test_top_k_caps_result_count(self):
+        rows = [_make_search_row(f"d{i}", distance=0.1 * i) for i in range(10)]
+        result, _ = self._run(rows, top_k=3)
+        assert len(result) == 3
+
+    def test_limit_is_top_k_times_three(self):
+        _, cursor = self._run([], top_k=4)
+        sql, params = cursor.execute.call_args[0]
+        # Last param in params tuple is the LIMIT value = top_k * 3 = 12
+        assert params[-1] == 12
+
+    def test_sql_uses_bare_cosine_distance_operator(self):
+        _, cursor = self._run([], top_k=1)
+        sql = cursor.execute.call_args[0][0]
+        assert "<=>" in sql
+
+    def test_sql_order_by_repeats_expression_not_alias(self):
+        # ORDER BY must use the expression, not the alias "distance",
+        # so the HNSW index can be used.
+        _, cursor = self._run([], top_k=1)
+        sql = cursor.execute.call_args[0][0]
+        order_by_section = sql[sql.upper().index("ORDER BY"):]
+        assert "<=>" in order_by_section
+
+    def test_sql_does_not_use_one_minus_form(self):
+        # "1 - (...) DESC" cannot use the HNSW index.
+        _, cursor = self._run([], top_k=1)
+        sql = cursor.execute.call_args[0][0]
+        assert "1 -" not in sql and "1-" not in sql
+
+    def test_result_dict_has_required_keys(self):
+        rows = [_make_search_row("d1")]
+        result, _ = self._run(rows, top_k=5)
+        assert set(result[0].keys()) == {"location", "event", "source_type", "chunk_text", "similarity"}
+
+    def test_source_type_filter_adds_where_clause(self):
+        _, cursor = self._run([], top_k=5, source_type="alert")
+        sql = cursor.execute.call_args[0][0]
+        assert "source_type" in sql.lower() and "WHERE" in sql.upper()
+
+    def test_source_type_filter_passed_as_param(self):
+        _, cursor = self._run([], top_k=5, source_type="forecast")
+        params = cursor.execute.call_args[0][1]
+        assert "forecast" in params
+
+    def test_no_filter_query_does_not_contain_where(self):
+        _, cursor = self._run([], top_k=5, source_type=None)
+        sql = cursor.execute.call_args[0][0]
+        assert "WHERE" not in sql.upper()
+
+    def test_embedding_passed_as_vector_string(self):
+        _, cursor = self._run([], top_k=1)
+        params = cursor.execute.call_args[0][1]
+        # Embedding string should look like a Python list repr
+        vec_str = params[0]
+        assert vec_str.startswith("[") and vec_str.endswith("]")

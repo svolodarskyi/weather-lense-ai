@@ -244,3 +244,165 @@ class TestWeatherSyncHappyPath:
             resp = client.post("/weather/sync", json={"locations": ["Nowhere, AK"]})
 
         assert resp.get_json()["synced"] == 0
+
+
+# ---------------------------------------------------------------------------
+# POST /weather/search
+# ---------------------------------------------------------------------------
+
+_FAKE_VEC = [0.1] * 384
+
+_SAMPLE_RESULTS = [
+    {
+        "location": "Chicago, IL",
+        "event": "Flood Watch",
+        "source_type": "alert",
+        "chunk_text": "Heavy rain expected.",
+        "similarity": 0.87,
+    }
+]
+
+
+class TestWeatherSearch:
+    def _search(self, client, body, results=None):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search",
+                          return_value=results if results is not None else _SAMPLE_RESULTS):
+            resp = client.post("/weather/search", json=body)
+        return resp
+
+    # -- Validation --
+    def test_missing_query_returns_400(self, client):
+        resp = self._search(client, {})
+        assert resp.status_code == 400
+
+    def test_blank_query_returns_400(self, client):
+        resp = self._search(client, {"query": "   "})
+        assert resp.status_code == 400
+
+    def test_non_string_query_returns_400(self, client):
+        resp = self._search(client, {"query": 42})
+        assert resp.status_code == 400
+
+    def test_null_query_returns_400(self, client):
+        resp = self._search(client, {"query": None})
+        assert resp.status_code == 400
+
+    def test_error_body_has_error_key(self, client):
+        resp = self._search(client, {})
+        assert "error" in resp.get_json()
+
+    # -- Happy path --
+    def test_returns_200(self, client):
+        resp = self._search(client, {"query": "flood risk"})
+        assert resp.status_code == 200
+
+    def test_response_has_query_key(self, client):
+        resp = self._search(client, {"query": "flood risk"})
+        assert resp.get_json()["query"] == "flood risk"
+
+    def test_response_has_count_key(self, client):
+        resp = self._search(client, {"query": "flood risk"})
+        assert "count" in resp.get_json()
+
+    def test_response_has_results_list(self, client):
+        resp = self._search(client, {"query": "flood risk"})
+        assert isinstance(resp.get_json()["results"], list)
+
+    def test_count_matches_results_length(self, client):
+        resp = self._search(client, {"query": "flood risk"})
+        data = resp.get_json()
+        assert data["count"] == len(data["results"])
+
+    def test_empty_embeddings_returns_200_empty(self, client):
+        resp = self._search(client, {"query": "flood risk"}, results=[])
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert data["count"] == 0
+        assert data["results"] == []
+
+    def test_top_k_default_is_five(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=[]) as mock_search:
+            client.post("/weather/search", json={"query": "rain"})
+
+        _, kwargs = mock_search.call_args
+        positional = mock_search.call_args[0]
+        top_k = positional[2] if len(positional) > 2 else kwargs.get("top_k")
+        assert top_k == 5
+
+    def test_top_k_clamped_to_20(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=[]) as mock_search:
+            client.post("/weather/search", json={"query": "rain", "top_k": 999})
+
+        positional = mock_search.call_args[0]
+        top_k = positional[2]
+        assert top_k == 20
+
+    def test_top_k_clamped_to_minimum_one(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=[]) as mock_search:
+            client.post("/weather/search", json={"query": "rain", "top_k": 0})
+
+        positional = mock_search.call_args[0]
+        top_k = positional[2]
+        assert top_k >= 1
+
+    def test_calls_encoder_encode(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=[]):
+            client.post("/weather/search", json={"query": "tornado warning"})
+
+        mock_enc.encode.assert_called_once()
+        assert "tornado warning" in mock_enc.encode.call_args[0][0]
+
+    def test_source_type_filter_forwarded(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=[]) as mock_search:
+            client.post("/weather/search", json={"query": "rain", "source_type": "alert"})
+
+        _, kwargs = mock_search.call_args
+        assert kwargs.get("source_type") == "alert"
+
+    def test_query_stripped_before_encoding(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=[]):
+            resp = client.post("/weather/search", json={"query": "  flood  "})
+
+        assert resp.get_json()["query"] == "flood"

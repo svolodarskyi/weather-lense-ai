@@ -2,7 +2,7 @@
 WeatherLens AI — database operations.
 
 Sprint 3: write side (upsert_documents, clear_stale_embeddings).
-Sprint 5: read side (search) added later.
+Sprint 5: read side (search).
 """
 
 from psycopg2.extras import execute_values, Json
@@ -61,6 +61,78 @@ def upsert_documents(conn, docs: list[WeatherDoc]) -> int:
     with conn.cursor() as cur:
         execute_values(cur, _UPSERT_SQL, [_to_row(d) for d in docs])
     return len(docs)
+
+
+# ---------------------------------------------------------------------------
+# Read side
+# ---------------------------------------------------------------------------
+
+# Both queries repeat the embedding expression in ORDER BY rather than
+# referencing the SELECT alias `distance`. PostgreSQL can only use the HNSW
+# index when the ORDER BY expression matches the indexed expression exactly;
+# an alias reference or 1-(...) DESC defeats the index and forces a seq scan.
+_SEARCH_SQL = """
+    SELECT d.id, d.location, d.event, d.source_type, e.chunk_text,
+           e.document_id,
+           e.embedding <=> %s::vector AS distance
+    FROM weather_embeddings e
+    JOIN weather_documents d ON d.id = e.document_id
+    ORDER BY e.embedding <=> %s::vector
+    LIMIT %s
+"""
+
+_SEARCH_FILTERED_SQL = """
+    SELECT d.id, d.location, d.event, d.source_type, e.chunk_text,
+           e.document_id,
+           e.embedding <=> %s::vector AS distance
+    FROM weather_embeddings e
+    JOIN weather_documents d ON d.id = e.document_id
+    WHERE d.source_type = %s
+    ORDER BY e.embedding <=> %s::vector
+    LIMIT %s
+"""
+
+
+def search(
+    conn,
+    embedding: list[float],
+    top_k: int,
+    source_type: str | None = None,
+) -> list[dict]:
+    """Semantic similarity search over weather_embeddings.
+
+    Fetches top_k * 3 rows from the DB (already ordered by distance), then
+    deduplicates in Python to one result per document_id — the DB-ordered rows
+    guarantee the first occurrence of each document_id has the lowest distance.
+    Returns at most top_k results with similarity = 1 - cosine_distance.
+    """
+    vec = str(embedding)   # "[0.1, 0.2, ...]" matches pgvector text input format
+    fetch = top_k * 3
+
+    with conn.cursor() as cur:
+        if source_type:
+            cur.execute(_SEARCH_FILTERED_SQL, (vec, source_type, vec, fetch))
+        else:
+            cur.execute(_SEARCH_SQL, (vec, vec, fetch))
+        rows = cur.fetchall()
+
+    seen: set[str] = set()
+    results: list[dict] = []
+    for _, location, event, src_type, chunk_text, doc_id, distance in rows:
+        if doc_id in seen:
+            continue
+        seen.add(doc_id)
+        results.append({
+            "location": location,
+            "event": event,
+            "source_type": src_type,
+            "chunk_text": chunk_text,
+            "similarity": round(1.0 - float(distance), 6),
+        })
+        if len(results) >= top_k:
+            break
+
+    return results
 
 
 def clear_stale_embeddings(conn) -> int:
