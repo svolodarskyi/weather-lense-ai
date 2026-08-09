@@ -2,6 +2,8 @@
 
 A weather intelligence pipeline that harvests National Weather Service (NWS) text, embeds it with a sentence transformer, stores vectors in Databricks Lakebase (pgvector), and serves semantic search and AI-powered chat via a Flask REST API.
 
+**Live app:** https://weather-lens-ai-7474648001102301.aws.databricksapps.com
+
 ![WeatherLens AI — search results and AI summary](docs/screenshot-search.png)
 
 ---
