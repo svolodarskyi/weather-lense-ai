@@ -9,6 +9,6 @@ resources:
         - name: lakebase-url
           description: "Lakebase connection URL"
           secret:
-            scope: database
-            key: lakebase-url
+            scope: ${var.secret_scope}
+            key: ${var.secret_key}
             permission: READ

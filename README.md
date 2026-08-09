@@ -13,6 +13,8 @@ A weather intelligence pipeline that harvests National Weather Service (NWS) tex
 5. [API reference](#api-reference)
 6. [Local development](#local-development)
 7. [Deployment](#deployment)
+8. [CI/CD](#cicd)
+9. [Deliverables](#deliverables)
 
 ---
 
@@ -370,7 +372,7 @@ All external boundaries (HTTP, Postgres wire, sentence-transformer encoder) are 
 
 ## Deployment
 
-Everything is managed by a single Databricks Asset Bundle (`databricks.yml`). One `bundle deploy` provisions the app and the scheduled job together.
+Everything is managed by a single Databricks Asset Bundle (`databricks.yml`). The bundle defines two targets — `dev` (default, user-scoped workspace path) and `prod` (fixed shared path under `/Workspace/Shared/.bundle/`, used by CI/CD). Both targets deploy the same app resource and refresh job; only resource name prefixes and variable values differ.
 
 ### Prerequisites
 
@@ -412,6 +414,8 @@ databricks bundle run weather_lens_ai --profile DEFAULT
 
 The app's service principal automatically gets `READ` access to the `database/lakebase-url` secret via the bundle resource definition — no manual permission grants needed.
 
+`DATABRICKS_TOKEN` is **not** needed in the deployed app. Databricks Apps auto-injects `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET`; the LLM client exchanges these for a short-lived M2M OAuth token on each request. `DATABRICKS_TOKEN` is only required for local development (see [Local development](#local-development)).
+
 ### Run the index refresh job
 
 ```bash
@@ -421,7 +425,7 @@ databricks bundle run refresh_weather_index --profile DEFAULT
 
 The job is scheduled every 30 minutes but starts paused. To enable automatic runs, change `pause_status: UNPAUSED` in `resources/refresh_weather_index_job.yml` and redeploy, or unpause it directly in the Databricks Jobs UI.
 
-### Redeploy after code changes
+### Redeploy after code changes (dev)
 
 ```bash
 git pull
@@ -430,3 +434,172 @@ databricks apps deploy weather-lens-ai \
   --source-code-path /Workspace/Users/<your-email>/.bundle/weather-lens-ai/dev/files \
   --profile DEFAULT
 ```
+
+---
+
+## CI/CD
+
+The repository ships two GitHub Actions workflows:
+
+| Workflow | File | Trigger | What it does |
+|---|---|---|---|
+| **CI** | `.github/workflows/ci.yml` | PR to `main`, push to any non-main branch | Runs pytest, then validates the DABs bundle against the workspace |
+| **CD** | `.github/workflows/cd.yml` | Push / merge to `main` | Re-runs tests, deploys bundle to `prod` target, pushes app source code |
+
+### Required GitHub secrets
+
+Add these under **Settings → Secrets → Actions** in the repository:
+
+| Secret | Value |
+|---|---|
+| `DATABRICKS_HOST` | `https://dbc-432266ff-3fab.cloud.databricks.com` |
+| `DATABRICKS_TOKEN` | A Databricks personal access token (or use `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` for service-principal auth) |
+
+### How prod deploys work
+
+The `prod` target in `databricks.yml` sets a fixed workspace root path:
+
+```
+/Workspace/Shared/.bundle/weather-lens-ai/prod/
+```
+
+This makes the path predictable regardless of which user or service principal runs the workflow. The CD workflow deploys to this path and then calls:
+
+```bash
+databricks apps deploy weather-lens-ai \
+  --source-code-path /Workspace/Shared/.bundle/weather-lens-ai/prod/files
+```
+
+No hard-coded usernames, no dynamic path resolution at deploy time.
+
+### Bundle variables
+
+Key parameters are declared as bundle variables in `databricks.yml` and can be overridden on the CLI or per-target:
+
+```bash
+# Deploy with a custom set of locations
+databricks bundle deploy --target prod \
+  --var="locations=Boston, MA;Portland, OR;Nashville, TN"
+
+# Use a different secret scope/key
+databricks bundle deploy --var="secret_scope=myapp" --var="secret_key=db-url"
+```
+
+---
+
+## Deliverables
+
+This section maps each assignment deliverable to the implementation, explains design decisions, and documents known limitations.
+
+---
+
+### Data source: National Weather Service API
+
+**Chosen source:** [api.weather.gov](https://api.weather.gov) — NWS is the recommended source and the natural fit: no API key, generous rate limits, and rich free-text narrative fields ideal for embedding. Two endpoints are used:
+
+| Endpoint | Narrative field embedded |
+|---|---|
+| `GET /alerts/active?area={state}` | `description` + `instruction` (concatenated) |
+| `GET /gridpoints/{office}/{x},{y}/forecast` | `detailedForecast` per period |
+
+Geocoding (city → lat/lon → NWS grid) is done via Open-Meteo's free geocoding API, removing any manual coordinate lookup.
+
+---
+
+### Required deliverables
+
+#### 1. `weather_client.py` — NWS harvesting client
+
+Mirrors the `massive_client.py` pattern from the reference app. Given a list of city/state strings, `WeatherClient.fetch()`:
+
+1. Geocodes each location (Open-Meteo → lat/lon).
+2. Resolves NWS grid point (`/points/{lat},{lon}`).
+3. Fetches active alerts (`/alerts/active?area={state}`) and 7-day forecast (`/gridpoints/{office}/{x},{y}/forecast`).
+4. Normalises each item into a document dict with stable dedup key:
+   - Alerts: `id` = NWS alert ID (`urn:oid:…` string from the API).
+   - Forecasts: `id` = `SHA-256(location + period_name + narrative_text)`.
+5. Computes `content_hash = SHA-256(narrative_text)` so amended alerts are detected without re-embedding unchanged text.
+
+A built-in token-bucket rate-limiter (1 req/s) prevents hitting NWS's soft rate limit.
+
+#### 2. `app.py` — Flask REST API with `/weather/sync` and `/weather/search`
+
+Both endpoints required by the assignment are implemented, plus a bonus RAG chat endpoint:
+
+| Endpoint | Description |
+|---|---|
+| `POST /weather/sync` | Harvests NWS data for a list of locations, upserts into `weather_documents`, clears stale embeddings |
+| `POST /weather/search` | Embeds query with the same model, runs HNSW cosine search, returns ranked chunks with similarity scores |
+| `POST /weather/chat` | Retrieves top-k chunks (same as search), synthesises a plain-language answer with Llama 3.3 70B (stretch goal) |
+| `GET /health` | Liveness probe — never blocks on DB or model |
+
+The encoder (`SentenceTransformer`) is instantiated once at module level and shared across workers via gunicorn's `--preload` flag, avoiding the ~2 s model load on every request.
+
+#### 3. `lakebase.py` + `schema.sql` + `repository.py` — schema and data access
+
+- **`lakebase.py`** — `get_lakebase_connection()` context manager using `psycopg2` + `LAKEBASE_CONNECTION_URL`.
+- **`schema.sql`** — idempotent DDL (`CREATE … IF NOT EXISTS`) for both tables plus the HNSW index; applied by `apply_schema()` which is called on startup.
+- **`repository.py`** — all SQL in one place: `upsert_documents`, `clear_stale_embeddings`, `find_unembedded`, `insert_embeddings`, and `search`. The search query uses pgvector's `<=>` cosine-distance operator; the `ORDER BY` clause repeats the bare expression (not an alias) so the HNSW index is used.
+
+Schema:
+```sql
+-- Raw NWS text, one row per alert or forecast period
+weather_documents (
+    id TEXT PRIMARY KEY,
+    location TEXT, source_type TEXT, event TEXT,
+    narrative_text TEXT, content_hash TEXT,
+    issued_at TIMESTAMPTZ, synced_at TIMESTAMPTZ, payload JSONB
+)
+
+-- One row per text chunk; FK cascades on delete
+weather_embeddings (
+    id BIGSERIAL PRIMARY KEY,
+    document_id TEXT REFERENCES weather_documents(id) ON DELETE CASCADE,
+    chunk_index INT, chunk_text TEXT,
+    embedding VECTOR(384), content_hash TEXT,
+    model_name TEXT, created_at TIMESTAMPTZ
+)
+
+CREATE INDEX weather_embeddings_hnsw
+ON weather_embeddings USING hnsw (embedding vector_cosine_ops);
+```
+
+#### 4. `notebooks/refresh_weather_index.py` — psycopg2-based embedding job
+
+A Databricks Notebook (deployed as a scheduled Job via Asset Bundles) that in a single pass:
+
+1. Re-syncs NWS data for a fixed set of locations.
+2. Calls `repository.clear_stale_embeddings()` to delete rows whose `content_hash` no longer matches the parent document (amended alerts).
+3. Reads unembedded documents with `repository.find_unembedded()`.
+4. Chunks each `narrative_text` with a sliding window (800 chars, 100-char overlap, snapped to sentence/word boundaries).
+5. Embeds chunks in batches of 64 with `all-MiniLM-L6-v2` (384-dim, CPU).
+6. Writes rows to `weather_embeddings` via `psycopg2` `execute_values` — no Spark JDBC.
+
+The connection string (`LAKEBASE_CONNECTION_URL`) is read from the `database/lakebase-url` Databricks secret — the same scope used by the app.
+
+---
+
+### Stretch goals completed
+
+| Goal | Implementation |
+|---|---|
+| LLM-generated summary (RAG) | `POST /weather/chat` — retrieves top-k chunks, synthesises answer with Llama 3.3 70B via Databricks Foundation Models OpenAI-compatible endpoint |
+| Dedup / upsert on stable ID | `repository.upsert_documents()` uses `ON CONFLICT (id) DO UPDATE`; `content_hash` detects amendments without re-embedding unchanged text |
+| Scheduled Databricks Job | `resources/refresh_weather_index_job.yml` deploys via Asset Bundles; scheduled every 30 min (paused by default — unpause in the Jobs UI) |
+| Filter by `source_type` | Both `/weather/search` and `/weather/chat` accept an optional `"source_type": "alert"|"forecast"` body field |
+| HNSW index | Created in `schema.sql`; `ORDER BY e.embedding <=> %s::vector` expression is repeated verbatim so the planner uses the index |
+
+---
+
+### Known limitations and future improvements
+
+**Similarity threshold filtering** — The current retrieval returns the top-k results by cosine distance regardless of how relevant they are. A query about "hurricane risk in Texas" can surface a Chicago forecast with a low similarity score simply because it is the closest match in a sparse index. A minimum-similarity cutoff (e.g. discard results below 0.3) or a cross-encoder reranker would eliminate these irrelevant results.
+
+**Edge cases not yet handled:**
+- NWS occasionally returns `null` for `detailedForecast` on some grid cells; these documents are currently stored with empty `narrative_text` and produce a zero-length embedding.
+- Very long combined alert descriptions (>4 KB) are chunked but the overlap logic does not account for paragraph boundaries that span multiple NWS fields.
+- The geocoder returns the first match for a city name; ambiguous names (e.g. "Springfield") resolve to whichever city Open-Meteo ranks first.
+
+**Multi-state alert deduplication** — NWS may issue the same alert across multiple states under different IDs. There is no cross-location dedup, so the same physical event can appear multiple times in search results.
+
+**Token refresh for the Lakebase connection** — The `LAKEBASE_CONNECTION_URL` is stored as a static secret. Lakebase OAuth tokens expire after 1 hour. In production, a token-refresh loop (as shown in the Lakebase connectivity docs) should replace the static URL.

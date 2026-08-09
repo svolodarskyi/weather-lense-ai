@@ -5,17 +5,15 @@ resources:
 
       tasks:
         - task_key: refresh
-          # No environment_key / no environment spec:
-          # - psycopg2 is already shipped by Databricks Runtime (2.9.11)
-          # - sentence-transformers is installed via %pip inside the notebook
-          # - dbutils.library.restartPython() gives a clean interpreter after pip
+          # No environment_key — psycopg2 ships with DBR; sentence-transformers
+          # is installed via %pip inside the notebook.
           notebook_task:
             notebook_path: ../notebooks/refresh_weather_index.py
             base_parameters:
-              locations: "Chicago, IL;Miami, FL;New York, NY;Los Angeles, CA;Houston, TX"
+              locations: ${var.locations}
               limit: "50"
-              secret_scope: "database"
-              secret_key: "lakebase-url"
+              secret_scope: ${var.secret_scope}
+              secret_key: ${var.secret_key}
 
       schedule:
         quartz_cron_expression: "0 0,30 * * * ?"
@@ -24,3 +22,8 @@ resources:
 
       max_concurrent_runs: 1
       timeout_seconds: 1800
+
+      email_notifications:
+        on_failure:
+          - sergii.volodarskyi@gmail.com
+        no_alert_for_skipped_runs: true

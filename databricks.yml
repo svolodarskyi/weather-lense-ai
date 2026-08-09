@@ -1,12 +1,54 @@
 bundle:
   name: weather-lens-ai
 
+# ---------------------------------------------------------------------------
+# Workspace sync: exclude dev/test artifacts from the workspace upload
+# ---------------------------------------------------------------------------
+sync:
+  exclude:
+    - "**/__pycache__/"
+    - "**/*.pyc"
+    - .venv/
+    - .pytest_cache/
+    - tests/
+    - pytest.ini
+    - smoketest.py
+    - .github/
+
+# ---------------------------------------------------------------------------
+# Variables — override per target or via --var flag on the CLI
+# ---------------------------------------------------------------------------
+variables:
+  locations:
+    description: "Semicolon-separated list of city/state locations to refresh"
+    default: "Chicago, IL;Miami, FL;New York, NY;Los Angeles, CA;Houston, TX"
+  secret_scope:
+    description: "Databricks secret scope holding the Lakebase connection URL"
+    default: database
+  secret_key:
+    description: "Databricks secret key holding the Lakebase connection URL"
+    default: lakebase-url
+
 include:
   - resources/*.yml
 
+# ---------------------------------------------------------------------------
+# Targets
+# ---------------------------------------------------------------------------
 targets:
   dev:
     mode: development
     default: true
     workspace:
       host: https://dbc-432266ff-3fab.cloud.databricks.com
+
+  prod:
+    mode: production
+    workspace:
+      host: https://dbc-432266ff-3fab.cloud.databricks.com
+      # Fixed root path so CI/CD always knows where to find deployed files
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      locations: >-
+        Chicago, IL;Miami, FL;New York, NY;Los Angeles, CA;Houston, TX;
+        Seattle, WA;Denver, CO;Atlanta, GA;Phoenix, AZ;Philadelphia, PA
