@@ -132,7 +132,7 @@ class Encoder:
         # Deferred import so the module can be imported in tests without
         # pulling in sentence_transformers / torch.
         from sentence_transformers import SentenceTransformer
-        self._model = SentenceTransformer(model_name)
+        self._model = SentenceTransformer(model_name, device="cpu")
         self._model_name = model_name
 
     @property

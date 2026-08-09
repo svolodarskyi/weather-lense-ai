@@ -1,0 +1,12 @@
+bundle:
+  name: weather-lens-ai
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://dbc-432266ff-3fab.cloud.databricks.com
