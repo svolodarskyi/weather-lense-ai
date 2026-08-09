@@ -5,6 +5,7 @@ Endpoints:
   GET  /health         — liveness probe; never blocks on model or DB load
   POST /weather/sync   — harvest NWS text for a list of locations, upsert to Lakebase
   POST /weather/search — semantic search over stored embeddings
+  POST /weather/chat   — RAG: retrieve NWS context, synthesise answer with Llama 3.3 70B
 
 Both WeatherClient and Encoder are instantiated once at module level:
   - WeatherClient owns a requests.Session and a rate-limiter; per-request
@@ -18,6 +19,7 @@ from flask import Flask, jsonify, render_template, request
 from lakebase import get_lakebase_connection
 from weather_client import WeatherClient
 from embeddings import Encoder, MODEL_NAME
+import llm
 import repository
 
 app = Flask(__name__)
@@ -80,3 +82,35 @@ def weather_search():
         results = repository.search(conn, q_vec, top_k, source_type=source_type)
 
     return jsonify({"query": q, "count": len(results), "results": results})
+
+
+@app.post("/weather/chat")
+def weather_chat():
+    body = request.get_json(silent=True) or {}
+
+    question = body.get("question")
+    if not isinstance(question, str) or not question.strip():
+        return jsonify({"error": "question must be a non-empty string"}), 400
+
+    top_k = body.get("top_k", 5)
+    if not isinstance(top_k, int):
+        top_k = 5
+    top_k = max(1, min(10, top_k))
+
+    source_type = body.get("source_type") or None
+
+    q = question.strip()
+    [q_vec] = encoder.encode([q])
+
+    with get_lakebase_connection() as conn:
+        sources = repository.search(conn, q_vec, top_k, source_type=source_type)
+
+    if not sources:
+        return jsonify({
+            "question": q,
+            "answer": "No relevant weather data found. Try syncing more locations first.",
+            "sources": [],
+        })
+
+    answer = llm.chat(q, sources)
+    return jsonify({"question": q, "answer": answer, "sources": sources})

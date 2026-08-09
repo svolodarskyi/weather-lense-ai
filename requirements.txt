@@ -2,6 +2,7 @@ flask
 gunicorn
 psycopg2-binary
 sentence-transformers
+openai
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
 requests

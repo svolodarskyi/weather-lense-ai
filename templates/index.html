@@ -263,15 +263,91 @@
       margin-right: 6px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── tabs ───────────────────────────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 8px 20px;
+      transition: all 0.15s;
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .tab-panel { display: none; width: 100%; max-width: 680px; }
+    .tab-panel.active { display: block; }
+
+    /* ── chat UI ────────────────────────────────────────────────────────── */
+    .chat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .chat-input-row { display: flex; gap: 10px; }
+    #chat-question {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 1rem;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #chat-question:focus { border-color: var(--accent); }
+    #chat-question::placeholder { color: var(--muted); }
+
+    .answer-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+      line-height: 1.7;
+      font-size: 0.95rem;
+    }
+    .answer-box p { margin-bottom: 0.6em; }
+    .answer-box p:last-child { margin-bottom: 0; }
+
+    .sources-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
+    }
   </style>
 </head>
 <body>
 
   <header>
     <h1>Weather<span>Lens</span> AI</h1>
-    <p>Semantic search over live NWS alerts &amp; forecasts</p>
+    <p>Semantic search &amp; AI chat over live NWS alerts and forecasts</p>
   </header>
 
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="search">Search</button>
+    <button class="tab-btn"        data-tab="chat">Chat</button>
+  </div>
+
+  <!-- ── Search tab ─────────────────────────────────────────────────────── -->
+  <div id="tab-search" class="tab-panel active">
   <div class="search-card">
     <form id="search-form" autocomplete="off">
       <div class="input-row">
@@ -301,6 +377,27 @@
 
   <div id="status"></div>
   <div id="results"></div>
+  </div> <!-- #tab-search -->
+
+  <!-- ── Chat tab ───────────────────────────────────────────────────────── -->
+  <div id="tab-chat" class="tab-panel">
+    <div class="chat-card">
+      <form id="chat-form" autocomplete="off">
+        <div class="chat-input-row">
+          <input id="chat-question" type="text"
+                 placeholder="e.g. Should I worry about flooding in Chicago this weekend?" />
+          <button type="submit" id="chat-btn" class="tab-btn active"
+                  style="border-radius:6px;padding:10px 20px;">Ask</button>
+        </div>
+      </form>
+    </div>
+    <div id="chat-status"></div>
+    <div id="chat-answer" style="display:none">
+      <div class="answer-box" id="chat-answer-text"></div>
+      <div class="sources-label">Sources used</div>
+      <div id="chat-sources"></div>
+    </div>
+  </div>
 
   <script>
     const form      = document.getElementById('search-form');
@@ -418,6 +515,77 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+    }
+
+    // ── tab switching ────────────────────────────────────────────────────
+    document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+      });
+    });
+
+    // ── chat ─────────────────────────────────────────────────────────────
+    const chatForm      = document.getElementById('chat-form');
+    const chatInput     = document.getElementById('chat-question');
+    const chatBtn       = document.getElementById('chat-btn');
+    const chatStatusEl  = document.getElementById('chat-status');
+    const chatAnswerEl  = document.getElementById('chat-answer');
+    const chatAnswerText = document.getElementById('chat-answer-text');
+    const chatSourcesEl = document.getElementById('chat-sources');
+
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = chatInput.value.trim();
+      if (!q) { setChatStatus('Enter a question.', true); return; }
+
+      setChatStatus('<span class="spinner"></span>Thinking…');
+      chatAnswerEl.style.display = 'none';
+      chatBtn.disabled = true;
+
+      try {
+        const resp = await fetch('/weather/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: q, top_k: 5 }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) { setChatStatus(data.error || `Error ${resp.status}`, true); return; }
+
+        setChatStatus('');
+        chatAnswerText.innerHTML = escHtml(data.answer)
+          .replace(/\n\n/g, '</p><p>')
+          .replace(/\n/g, '<br>');
+        chatAnswerText.innerHTML = `<p>${chatAnswerText.innerHTML}</p>`;
+        chatSourcesEl.innerHTML = (data.sources || []).map(r => {
+          const isAlert = r.source_type === 'alert';
+          return `
+            <div class="result-card ${isAlert ? 'alert-card' : 'forecast-card'}"
+                 style="margin-bottom:10px">
+              <div class="card-header">
+                <span class="badge ${isAlert ? 'badge-alert' : 'badge-forecast'}">
+                  ${isAlert ? 'Alert' : 'Forecast'}
+                </span>
+                <span class="card-event">${escHtml(r.event || '—')}</span>
+                <span class="card-location">${escHtml(r.location)}</span>
+              </div>
+              <div class="card-text" style="font-size:0.82rem">${escHtml(r.chunk_text)}</div>
+            </div>`;
+        }).join('');
+        chatAnswerEl.style.display = 'block';
+
+      } catch (err) {
+        setChatStatus('Request failed — is the server running?', true);
+      } finally {
+        chatBtn.disabled = false;
+      }
+    });
+
+    function setChatStatus(html, isError = false) {
+      chatStatusEl.innerHTML = html;
+      chatStatusEl.className = isError ? 'error' : '';
     }
   </script>
 

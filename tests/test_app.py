@@ -406,3 +406,139 @@ class TestWeatherSearch:
             resp = client.post("/weather/search", json={"query": "  flood  "})
 
         assert resp.get_json()["query"] == "flood"
+
+
+# ---------------------------------------------------------------------------
+# POST /weather/chat
+# ---------------------------------------------------------------------------
+
+_CHAT_SOURCES = [
+    {
+        "location": "Chicago, IL",
+        "event": "Flood Watch",
+        "source_type": "alert",
+        "chunk_text": "Heavy rain expected through Monday.",
+        "similarity": 0.88,
+    }
+]
+
+
+class TestWeatherChat:
+    def _chat(self, client, body, sources=None, answer="Flooding is likely."):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search",
+                          return_value=sources if sources is not None else _CHAT_SOURCES), \
+             patch.object(app_module.llm, "chat", return_value=answer):
+            resp = client.post("/weather/chat", json=body)
+        return resp
+
+    # -- Validation --
+    def test_missing_question_returns_400(self, client):
+        resp = self._chat(client, {})
+        assert resp.status_code == 400
+
+    def test_blank_question_returns_400(self, client):
+        resp = self._chat(client, {"question": "   "})
+        assert resp.status_code == 400
+
+    def test_non_string_question_returns_400(self, client):
+        resp = self._chat(client, {"question": 42})
+        assert resp.status_code == 400
+
+    def test_error_body_has_error_key(self, client):
+        resp = self._chat(client, {})
+        assert "error" in resp.get_json()
+
+    # -- Happy path --
+    def test_returns_200(self, client):
+        resp = self._chat(client, {"question": "Will it flood?"})
+        assert resp.status_code == 200
+
+    def test_response_has_question_key(self, client):
+        resp = self._chat(client, {"question": "Will it flood?"})
+        assert resp.get_json()["question"] == "Will it flood?"
+
+    def test_response_has_answer_key(self, client):
+        resp = self._chat(client, {"question": "Will it flood?"})
+        assert "answer" in resp.get_json()
+
+    def test_response_has_sources_list(self, client):
+        resp = self._chat(client, {"question": "Will it flood?"})
+        assert isinstance(resp.get_json()["sources"], list)
+
+    def test_answer_comes_from_llm(self, client):
+        resp = self._chat(client, {"question": "Will it flood?"}, answer="Yes, flooding expected.")
+        assert resp.get_json()["answer"] == "Yes, flooding expected."
+
+    def test_question_stripped(self, client):
+        resp = self._chat(client, {"question": "  Will it flood?  "})
+        assert resp.get_json()["question"] == "Will it flood?"
+
+    def test_no_sources_returns_200_with_fallback(self, client):
+        resp = self._chat(client, {"question": "Will it flood?"}, sources=[])
+        data = resp.get_json()
+        assert resp.status_code == 200
+        assert "answer" in data
+        assert data["sources"] == []
+
+    def test_no_sources_skips_llm_call(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=[]), \
+             patch.object(app_module.llm, "chat") as mock_llm:
+            client.post("/weather/chat", json={"question": "Will it flood?"})
+
+        mock_llm.assert_not_called()
+
+    def test_llm_called_with_question_and_sources(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=_CHAT_SOURCES), \
+             patch.object(app_module.llm, "chat", return_value="ans") as mock_llm:
+            client.post("/weather/chat", json={"question": "flood risk?"})
+
+        mock_llm.assert_called_once()
+        args = mock_llm.call_args[0]
+        assert args[0] == "flood risk?"
+        assert args[1] == _CHAT_SOURCES
+
+    def test_source_type_forwarded(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=[]) as mock_search, \
+             patch.object(app_module.llm, "chat", return_value="ans"):
+            client.post("/weather/chat", json={"question": "rain?", "source_type": "forecast"})
+
+        _, kwargs = mock_search.call_args
+        assert kwargs.get("source_type") == "forecast"
+
+    def test_top_k_clamped_to_10(self, client):
+        mock_enc = MagicMock()
+        mock_enc.encode.return_value = [_FAKE_VEC]
+        ctx, _ = _make_lakebase_ctx()
+
+        with patch.object(app_module, "encoder", mock_enc), \
+             patch.object(app_module, "get_lakebase_connection", return_value=ctx), \
+             patch.object(app_module.repository, "search", return_value=[]) as mock_search, \
+             patch.object(app_module.llm, "chat", return_value="ans"):
+            client.post("/weather/chat", json={"question": "rain?", "top_k": 999})
+
+        top_k = mock_search.call_args[0][2]
+        assert top_k == 10
