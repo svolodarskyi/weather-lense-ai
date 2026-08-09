@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WeatherLens AI</title>
   <style>
-    /* ── reset / base ───────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -22,6 +21,8 @@
       --fore-bg:   #0f1e2e;
       --fore-bd:   #2a5a8c;
       --fore-dot:  #5ba8e8;
+      --ai-bg:     #111820;
+      --ai-bd:     #2a4a6a;
       --radius:    10px;
     }
 
@@ -37,37 +38,22 @@
     }
 
     /* ── header ─────────────────────────────────────────────────────────── */
-    header {
-      text-align: center;
-      margin-bottom: 40px;
-    }
-    header h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-    }
+    header { text-align: center; margin-bottom: 40px; }
+    header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
     header h1 span { color: var(--accent); }
-    header p {
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 0.95rem;
-    }
+    header p { margin-top: 6px; color: var(--muted); font-size: 0.95rem; }
 
-    /* ── search form ────────────────────────────────────────────────────── */
+    /* ── search form ─────────────────────────────────────────────────────── */
     .search-card {
-      width: 100%;
-      max-width: 680px;
+      width: 100%; max-width: 680px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 24px;
-      margin-bottom: 32px;
+      margin-bottom: 20px;
     }
 
-    .input-row {
-      display: flex;
-      gap: 10px;
-    }
+    .input-row { display: flex; gap: 10px; }
 
     #query {
       flex: 1;
@@ -85,12 +71,9 @@
 
     button[type="submit"] {
       background: var(--accent);
-      border: none;
-      border-radius: 6px;
-      color: #fff;
-      cursor: pointer;
-      font-size: 0.95rem;
-      font-weight: 600;
+      border: none; border-radius: 6px;
+      color: #fff; cursor: pointer;
+      font-size: 0.95rem; font-weight: 600;
       padding: 10px 20px;
       transition: background 0.15s;
       white-space: nowrap;
@@ -99,82 +82,75 @@
     button[type="submit"]:disabled { opacity: 0.5; cursor: default; }
 
     .filters {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      margin-top: 16px;
-      flex-wrap: wrap;
+      display: flex; align-items: center;
+      gap: 20px; margin-top: 16px; flex-wrap: wrap;
     }
-
     .filter-label {
-      color: var(--muted);
-      font-size: 0.85rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+      color: var(--muted); font-size: 0.85rem;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
     }
-
-    .radio-group {
-      display: flex;
-      gap: 6px;
-    }
-
+    .radio-group { display: flex; gap: 6px; }
     .radio-group label {
       cursor: pointer;
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 4px 14px;
-      font-size: 0.85rem;
-      color: var(--muted);
-      transition: all 0.15s;
-      user-select: none;
+      border: 1px solid var(--border); border-radius: 20px;
+      padding: 4px 14px; font-size: 0.85rem; color: var(--muted);
+      transition: all 0.15s; user-select: none;
     }
     .radio-group input[type="radio"] { display: none; }
     .radio-group input[type="radio"]:checked + label {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
+      background: var(--accent); border-color: var(--accent); color: #fff;
     }
-
-    .topk-group {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: auto;
-    }
-    .topk-group label {
-      color: var(--muted);
-      font-size: 0.85rem;
-    }
+    .topk-group { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .topk-group label { color: var(--muted); font-size: 0.85rem; }
     #top-k {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 0.85rem;
-      padding: 4px 8px;
-      width: 64px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text);
+      font-size: 0.85rem; padding: 4px 8px; width: 64px;
     }
 
-    /* ── status messages ────────────────────────────────────────────────── */
+    /* ── status bar ──────────────────────────────────────────────────────── */
     #status {
-      width: 100%;
-      max-width: 680px;
-      text-align: center;
-      color: var(--muted);
-      font-size: 0.9rem;
-      min-height: 24px;
-      margin-bottom: 8px;
+      width: 100%; max-width: 680px;
+      text-align: center; color: var(--muted);
+      font-size: 0.9rem; min-height: 24px; margin-bottom: 12px;
     }
     #status.error { color: #e05c6b; }
 
-    /* ── results ────────────────────────────────────────────────────────── */
+    /* ── AI answer tile ──────────────────────────────────────────────────── */
+    #ai-tile {
+      display: none;
+      width: 100%; max-width: 680px;
+      background: var(--ai-bg);
+      border: 1px solid var(--ai-bd);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      margin-bottom: 20px;
+      animation: fadeIn 0.2s ease;
+    }
+    #ai-tile .ai-label {
+      font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--accent); margin-bottom: 10px;
+    }
+    #ai-answer {
+      font-size: 0.95rem; line-height: 1.75; color: var(--text);
+    }
+    #ai-answer p { margin-bottom: 0.5em; }
+    #ai-answer p:last-child { margin-bottom: 0; }
+
+    /* ── section label ───────────────────────────────────────────────────── */
+    .section-label {
+      width: 100%; max-width: 680px;
+      font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin-bottom: 10px;
+    }
+
+    /* ── result cards ────────────────────────────────────────────────────── */
     #results {
-      width: 100%;
-      max-width: 680px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
+      width: 100%; max-width: 680px;
+      display: flex; flex-direction: column; gap: 14px;
     }
 
     .result-card {
@@ -184,170 +160,59 @@
       padding: 18px 20px;
       animation: fadeIn 0.2s ease;
     }
-    .result-card.alert-card  { border-left: 3px solid var(--alert-bd); background: var(--alert-bg); }
-    .result-card.forecast-card { border-left: 3px solid var(--fore-bd); background: var(--fore-bg); }
+    .result-card.alert-card    { border-left: 3px solid var(--alert-bd); background: var(--alert-bg); }
+    .result-card.forecast-card { border-left: 3px solid var(--fore-bd);  background: var(--fore-bg);  }
 
     @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
 
     .card-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 10px;
-      flex-wrap: wrap;
+      display: flex; align-items: center;
+      gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
     }
-
     .badge {
-      font-size: 0.7rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      border-radius: 4px;
-      padding: 2px 8px;
+      font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      border-radius: 4px; padding: 2px 8px;
     }
     .badge-alert    { background: rgba(123,63,110,0.35); color: var(--alert-dot); }
-    .badge-forecast { background: rgba(42,90,140,0.35); color: var(--fore-dot); }
+    .badge-forecast { background: rgba(42,90,140,0.35);  color: var(--fore-dot);  }
+    .card-event   { font-weight: 600; font-size: 0.95rem; }
+    .card-location { color: var(--muted); font-size: 0.82rem; margin-left: auto; }
 
-    .card-event {
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
-
-    .card-location {
-      color: var(--muted);
-      font-size: 0.82rem;
-      margin-left: auto;
-    }
-
-    .sim-bar-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
+    .sim-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
     .sim-bar-track {
-      flex: 1;
-      height: 4px;
-      background: var(--border);
-      border-radius: 2px;
-      overflow: hidden;
+      flex: 1; height: 4px;
+      background: var(--border); border-radius: 2px; overflow: hidden;
     }
     .sim-bar-fill {
-      height: 100%;
-      border-radius: 2px;
-      background: var(--accent);
-      transition: width 0.4s ease;
+      height: 100%; border-radius: 2px;
+      background: var(--accent); transition: width 0.4s ease;
     }
-    .sim-label {
-      font-size: 0.78rem;
-      color: var(--muted);
-      white-space: nowrap;
-    }
+    .sim-label { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
 
     .card-text {
-      font-size: 0.88rem;
-      line-height: 1.6;
-      color: #c5c9de;
-      white-space: pre-wrap;
+      font-size: 0.88rem; line-height: 1.6;
+      color: #c5c9de; white-space: pre-wrap;
     }
 
-    /* ── spinner ────────────────────────────────────────────────────────── */
+    /* ── spinner ─────────────────────────────────────────────────────────── */
     .spinner {
-      display: inline-block;
-      width: 16px; height: 16px;
-      border: 2px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      vertical-align: middle;
-      margin-right: 6px;
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      vertical-align: middle; margin-right: 6px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── tabs ───────────────────────────────────────────────────────────── */
-    .tabs {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 24px;
-    }
-    .tab-btn {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 0.9rem;
-      font-weight: 600;
-      padding: 8px 20px;
-      transition: all 0.15s;
-    }
-    .tab-btn.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
-    .tab-panel { display: none; width: 100%; max-width: 680px; }
-    .tab-panel.active { display: block; }
-
-    /* ── chat UI ────────────────────────────────────────────────────────── */
-    .chat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 24px;
-      margin-bottom: 20px;
-    }
-    .chat-input-row { display: flex; gap: 10px; }
-    #chat-question {
-      flex: 1;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 1rem;
-      padding: 10px 14px;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    #chat-question:focus { border-color: var(--accent); }
-    #chat-question::placeholder { color: var(--muted); }
-
-    .answer-box {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-      margin-bottom: 16px;
-      line-height: 1.7;
-      font-size: 0.95rem;
-    }
-    .answer-box p { margin-bottom: 0.6em; }
-    .answer-box p:last-child { margin-bottom: 0; }
-
-    .sources-label {
-      color: var(--muted);
-      font-size: 0.78rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 10px;
-    }
   </style>
 </head>
 <body>
 
   <header>
     <h1>Weather<span>Lens</span> AI</h1>
-    <p>Semantic search &amp; AI chat over live NWS alerts and forecasts</p>
+    <p>AI-powered search over live NWS alerts and forecasts</p>
   </header>
 
-  <div class="tabs">
-    <button class="tab-btn active" data-tab="search">Search</button>
-    <button class="tab-btn"        data-tab="chat">Chat</button>
-  </div>
-
-  <!-- ── Search tab ─────────────────────────────────────────────────────── -->
-  <div id="tab-search" class="tab-panel active">
+  <!-- search form -->
   <div class="search-card">
     <form id="search-form" autocomplete="off">
       <div class="input-row">
@@ -360,10 +225,8 @@
         <div class="radio-group">
           <input type="radio" id="src-all"      name="source_type" value=""         checked />
           <label for="src-all">All</label>
-
           <input type="radio" id="src-alert"    name="source_type" value="alert" />
           <label for="src-alert">Alerts</label>
-
           <input type="radio" id="src-forecast" name="source_type" value="forecast" />
           <label for="src-forecast">Forecasts</label>
         </div>
@@ -375,38 +238,49 @@
     </form>
   </div>
 
+  <!-- status bar -->
   <div id="status"></div>
-  <div id="results"></div>
-  </div> <!-- #tab-search -->
 
-  <!-- ── Chat tab ───────────────────────────────────────────────────────── -->
-  <div id="tab-chat" class="tab-panel">
-    <div class="chat-card">
-      <form id="chat-form" autocomplete="off">
-        <div class="chat-input-row">
-          <input id="chat-question" type="text"
-                 placeholder="e.g. Should I worry about flooding in Chicago this weekend?" />
-          <button type="submit" id="chat-btn" class="tab-btn active"
-                  style="border-radius:6px;padding:10px 20px;">Ask</button>
-        </div>
-      </form>
-    </div>
-    <div id="chat-status"></div>
-    <div id="chat-answer" style="display:none">
-      <div class="answer-box" id="chat-answer-text"></div>
-      <div class="sources-label">Sources used</div>
-      <div id="chat-sources"></div>
-    </div>
+  <!-- AI answer tile (hidden until first search) -->
+  <div id="ai-tile">
+    <div class="ai-label">AI Summary</div>
+    <div id="ai-answer"></div>
   </div>
 
-  <script>
-    const form      = document.getElementById('search-form');
-    const queryInput = document.getElementById('query');
-    const btn       = document.getElementById('search-btn');
-    const statusEl  = document.getElementById('status');
-    const resultsEl = document.getElementById('results');
+  <!-- section label + result cards -->
+  <div class="section-label" id="results-label" style="display:none">Top matches</div>
+  <div id="results"></div>
 
-    async function searchOne(q, topK, sourceType) {
+  <script>
+    const form       = document.getElementById('search-form');
+    const queryInput = document.getElementById('query');
+    const searchBtn  = document.getElementById('search-btn');
+    const statusEl   = document.getElementById('status');
+    const aiTile     = document.getElementById('ai-tile');
+    const aiAnswer   = document.getElementById('ai-answer');
+    const resultsEl  = document.getElementById('results');
+    const resultsLabel = document.getElementById('results-label');
+
+    // ── helpers ──────────────────────────────────────────────────────────
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function setStatus(html, isError = false) {
+      statusEl.innerHTML = html;
+      statusEl.className = isError ? 'error' : '';
+    }
+
+    function mergeBySimilarity(a, b) {
+      const out = []; let i = 0, j = 0;
+      while (i < a.length && j < b.length)
+        out.push(a[i].similarity >= b[j].similarity ? a[i++] : b[j++]);
+      return out.concat(a.slice(i), b.slice(j));
+    }
+
+    async function fetchSearch(q, topK, sourceType) {
       const resp = await fetch('/weather/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -417,176 +291,99 @@
       return data.results;
     }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-
-      const q = queryInput.value.trim();
-      if (!q) { setStatus('Enter a search query.', true); return; }
-
-      const topK = Math.min(20, Math.max(1, parseInt(document.getElementById('top-k').value) || 5));
-      const sourceType = document.querySelector('input[name="source_type"]:checked').value;
-
-      setStatus('<span class="spinner"></span>Searching…');
-      resultsEl.innerHTML = '';
-      btn.disabled = true;
-
-      try {
-        let items;
-
-        if (sourceType === '') {
-          // "All" — fetch each type separately so both are guaranteed
-          // representation; a single unfiltered query is dominated by whichever
-          // type has more chunks in the DB (usually forecasts).
-          const half = Math.ceil(topK / 2);
-          const [alerts, forecasts] = await Promise.all([
-            searchOne(q, half, 'alert'),
-            searchOne(q, half, 'forecast'),
-          ]);
-          // Merge-sort by similarity descending, capped at topK.
-          items = mergeBySimilarity(alerts, forecasts).slice(0, topK);
-        } else {
-          items = await searchOne(q, topK, sourceType);
-        }
-
-        if (items.length === 0) {
-          setStatus('No results found. Try syncing more locations first.');
-          return;
-        }
-
-        setStatus(`${items.length} result${items.length !== 1 ? 's' : ''} for "${q}"`);
-        renderResults(items);
-
-      } catch (err) {
-        setStatus(err.message || 'Request failed — is the server running?', true);
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    function mergeBySimilarity(a, b) {
-      const out = [];
-      let i = 0, j = 0;
-      while (i < a.length && j < b.length) {
-        if (a[i].similarity >= b[j].similarity) out.push(a[i++]);
-        else out.push(b[j++]);
-      }
-      while (i < a.length) out.push(a[i++]);
-      while (j < b.length) out.push(b[j++]);
-      return out;
+    async function fetchChat(q, sourceType) {
+      const resp = await fetch('/weather/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, top_k: 5, source_type: sourceType || null }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+      return data.answer;
     }
 
-    function setStatus(html, isError = false) {
-      statusEl.innerHTML = html;
-      statusEl.className = isError ? 'error' : '';
-    }
-
+    // ── render ────────────────────────────────────────────────────────────
     function renderResults(items) {
-      resultsEl.innerHTML = items.map((r, i) => {
-        const isAlert = r.source_type === 'alert';
-        const pct = Math.round(r.similarity * 100);
-        const barWidth = Math.max(2, pct);
-        const text = escHtml(r.chunk_text);
-        const loc  = escHtml(r.location);
-        const evt  = escHtml(r.event || '—');
-
+      resultsEl.innerHTML = items.map(r => {
+        const isAlert  = r.source_type === 'alert';
+        const pct      = Math.round(r.similarity * 100);
         return `
           <div class="result-card ${isAlert ? 'alert-card' : 'forecast-card'}">
             <div class="card-header">
               <span class="badge ${isAlert ? 'badge-alert' : 'badge-forecast'}">
                 ${isAlert ? 'Alert' : 'Forecast'}
               </span>
-              <span class="card-event">${evt}</span>
-              <span class="card-location">${loc}</span>
+              <span class="card-event">${escHtml(r.event || '—')}</span>
+              <span class="card-location">${escHtml(r.location)}</span>
             </div>
             <div class="sim-bar-row">
               <div class="sim-bar-track">
-                <div class="sim-bar-fill" style="width:${barWidth}%"></div>
+                <div class="sim-bar-fill" style="width:${Math.max(2,pct)}%"></div>
               </div>
               <span class="sim-label">similarity ${pct}%</span>
             </div>
-            <div class="card-text">${text}</div>
+            <div class="card-text">${escHtml(r.chunk_text)}</div>
           </div>`;
       }).join('');
+      resultsLabel.style.display = items.length ? 'block' : 'none';
     }
 
-    function escHtml(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    function renderAnswer(text) {
+      aiAnswer.innerHTML = '<p>' +
+        escHtml(text).replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>') +
+        '</p>';
+      aiTile.style.display = 'block';
     }
 
-    // ── tab switching ────────────────────────────────────────────────────
-    document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn[data-tab]').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+    // ── submit ────────────────────────────────────────────────────────────
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const q = queryInput.value.trim();
+      if (!q) { setStatus('Enter a search query.', true); return; }
+
+      const topK       = Math.min(20, Math.max(1, parseInt(document.getElementById('top-k').value) || 5));
+      const sourceType = document.querySelector('input[name="source_type"]:checked').value;
+
+      // Reset UI
+      setStatus('<span class="spinner"></span>Searching…');
+      resultsEl.innerHTML = '';
+      resultsLabel.style.display = 'none';
+      aiTile.style.display = 'block';
+      aiAnswer.innerHTML = '<span class="spinner"></span>Generating AI summary…';
+      searchBtn.disabled = true;
+
+      // Fire search and chat in parallel
+      const searchPromise = (sourceType === '')
+        ? Promise.all([
+            fetchSearch(q, Math.ceil(topK / 2), 'alert'),
+            fetchSearch(q, Math.ceil(topK / 2), 'forecast'),
+          ]).then(([a, f]) => mergeBySimilarity(a, f).slice(0, topK))
+        : fetchSearch(q, topK, sourceType);
+
+      const chatPromise = fetchChat(q, sourceType);
+
+      // Render search results as soon as they arrive
+      searchPromise.then(items => {
+        if (items.length === 0) {
+          setStatus('No results found. Try syncing more locations first.');
+        } else {
+          setStatus(`${items.length} result${items.length !== 1 ? 's' : ''} for "${q}"`);
+          renderResults(items);
+        }
+      }).catch(err => setStatus(err.message || 'Search failed.', true));
+
+      // Render AI answer when it arrives (slower)
+      chatPromise.then(answer => {
+        renderAnswer(answer);
+      }).catch(() => {
+        aiAnswer.innerHTML = '<span style="color:var(--muted)">AI summary unavailable.</span>';
+      });
+
+      // Re-enable button once both settle
+      Promise.allSettled([searchPromise, chatPromise]).then(() => {
+        searchBtn.disabled = false;
       });
     });
-
-    // ── chat ─────────────────────────────────────────────────────────────
-    const chatForm      = document.getElementById('chat-form');
-    const chatInput     = document.getElementById('chat-question');
-    const chatBtn       = document.getElementById('chat-btn');
-    const chatStatusEl  = document.getElementById('chat-status');
-    const chatAnswerEl  = document.getElementById('chat-answer');
-    const chatAnswerText = document.getElementById('chat-answer-text');
-    const chatSourcesEl = document.getElementById('chat-sources');
-
-    chatForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const q = chatInput.value.trim();
-      if (!q) { setChatStatus('Enter a question.', true); return; }
-
-      setChatStatus('<span class="spinner"></span>Thinking…');
-      chatAnswerEl.style.display = 'none';
-      chatBtn.disabled = true;
-
-      try {
-        const resp = await fetch('/weather/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: q, top_k: 5 }),
-        });
-        const data = await resp.json();
-        if (!resp.ok) { setChatStatus(data.error || `Error ${resp.status}`, true); return; }
-
-        setChatStatus('');
-        chatAnswerText.innerHTML = escHtml(data.answer)
-          .replace(/\n\n/g, '</p><p>')
-          .replace(/\n/g, '<br>');
-        chatAnswerText.innerHTML = `<p>${chatAnswerText.innerHTML}</p>`;
-        chatSourcesEl.innerHTML = (data.sources || []).map(r => {
-          const isAlert = r.source_type === 'alert';
-          return `
-            <div class="result-card ${isAlert ? 'alert-card' : 'forecast-card'}"
-                 style="margin-bottom:10px">
-              <div class="card-header">
-                <span class="badge ${isAlert ? 'badge-alert' : 'badge-forecast'}">
-                  ${isAlert ? 'Alert' : 'Forecast'}
-                </span>
-                <span class="card-event">${escHtml(r.event || '—')}</span>
-                <span class="card-location">${escHtml(r.location)}</span>
-              </div>
-              <div class="card-text" style="font-size:0.82rem">${escHtml(r.chunk_text)}</div>
-            </div>`;
-        }).join('');
-        chatAnswerEl.style.display = 'block';
-
-      } catch (err) {
-        setChatStatus('Request failed — is the server running?', true);
-      } finally {
-        chatBtn.disabled = false;
-      }
-    });
-
-    function setChatStatus(html, isError = false) {
-      chatStatusEl.innerHTML = html;
-      chatStatusEl.className = isError ? 'error' : '';
-    }
   </script>
 
 </body>
