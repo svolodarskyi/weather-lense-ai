@@ -309,6 +309,17 @@
     const statusEl  = document.getElementById('status');
     const resultsEl = document.getElementById('results');
 
+    async function searchOne(q, topK, sourceType) {
+      const resp = await fetch('/weather/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q, top_k: topK, source_type: sourceType }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || `Error ${resp.status}`);
+      return data.results;
+    }
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
@@ -316,40 +327,56 @@
       if (!q) { setStatus('Enter a search query.', true); return; }
 
       const topK = Math.min(20, Math.max(1, parseInt(document.getElementById('top-k').value) || 5));
-      const sourceType = document.querySelector('input[name="source_type"]:checked').value || null;
+      const sourceType = document.querySelector('input[name="source_type"]:checked').value;
 
       setStatus('<span class="spinner"></span>Searching…');
       resultsEl.innerHTML = '';
       btn.disabled = true;
 
       try {
-        const resp = await fetch('/weather/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: q, top_k: topK, source_type: sourceType }),
-        });
+        let items;
 
-        const data = await resp.json();
+        if (sourceType === '') {
+          // "All" — fetch each type separately so both are guaranteed
+          // representation; a single unfiltered query is dominated by whichever
+          // type has more chunks in the DB (usually forecasts).
+          const half = Math.ceil(topK / 2);
+          const [alerts, forecasts] = await Promise.all([
+            searchOne(q, half, 'alert'),
+            searchOne(q, half, 'forecast'),
+          ]);
+          // Merge-sort by similarity descending, capped at topK.
+          items = mergeBySimilarity(alerts, forecasts).slice(0, topK);
+        } else {
+          items = await searchOne(q, topK, sourceType);
+        }
 
-        if (!resp.ok) {
-          setStatus(data.error || `Error ${resp.status}`, true);
+        if (items.length === 0) {
+          setStatus('No results found. Try syncing more locations first.');
           return;
         }
 
-        if (data.count === 0) {
-          setStatus('No results found. Try syncing more locations first.', false);
-          return;
-        }
-
-        setStatus(`${data.count} result${data.count !== 1 ? 's' : ''} for "${data.query}"`);
-        renderResults(data.results);
+        setStatus(`${items.length} result${items.length !== 1 ? 's' : ''} for "${q}"`);
+        renderResults(items);
 
       } catch (err) {
-        setStatus('Request failed — is the server running?', true);
+        setStatus(err.message || 'Request failed — is the server running?', true);
       } finally {
         btn.disabled = false;
       }
     });
+
+    function mergeBySimilarity(a, b) {
+      const out = [];
+      let i = 0, j = 0;
+      while (i < a.length && j < b.length) {
+        if (a[i].similarity >= b[j].similarity) out.push(a[i++]);
+        else out.push(b[j++]);
+      }
+      while (i < a.length) out.push(a[i++]);
+      while (j < b.length) out.push(b[j++]);
+      return out;
+    }
 
     function setStatus(html, isError = false) {
       statusEl.innerHTML = html;
