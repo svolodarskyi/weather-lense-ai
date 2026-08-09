@@ -16,8 +16,7 @@ Harvests NWS weather text, embeds it with a sentence transformer, stores vectors
 4. [End-to-end walkthrough](#end-to-end-walkthrough)
 5. [Local development](#local-development)
 6. [Deployment](#deployment)
-7. [CI/CD](#cicd)
-8. [Deliverables](#deliverables)
+7. [Deliverables](#deliverables)
 
 ---
 
@@ -365,28 +364,6 @@ databricks bundle deploy --var="locations=Boston, MA;Portland, OR" --var="secret
 
 ---
 
-## CI/CD
-
-The repository ships two GitHub Actions workflows:
-
-| Workflow | File | Trigger | What it does |
-|---|---|---|---|
-| **CI** | `.github/workflows/ci.yml` | PR to `main`, push to any non-main branch | Runs pytest, then validates the DABs bundle against the workspace |
-| **CD** | `.github/workflows/cd.yml` | Push / merge to `main` | Re-runs tests, deploys bundle to `prod` target, pushes app source code |
-
-### Required GitHub secrets
-
-Add these under **Settings → Secrets → Actions** in the repository:
-
-| Secret | Value |
-|---|---|
-| `DATABRICKS_HOST` | `https://dbc-432266ff-3fab.cloud.databricks.com` |
-| `DATABRICKS_TOKEN` | A Databricks personal access token (or use `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` for service-principal auth) |
-
-The `prod` target sets a fixed workspace root path (`/Workspace/Shared/.bundle/weather-lens-ai/prod`) so the deploy path is stable regardless of which user or service principal runs the workflow — no hard-coded usernames in CI.
-
----
-
 ## Deliverables
 
 ### Live demo
@@ -407,7 +384,6 @@ Search query: *"illinois weather risks"* — 5 semantically matched results with
 | `embeddings.py` | Chunker (800-char window, 100-char overlap) + `Encoder` wrapper around `all-MiniLM-L6-v2` |
 | `notebooks/refresh_weather_index.py` | Databricks Notebook job — syncs NWS → clears stale embeddings → embeds new chunks via `psycopg2` `execute_values` (no Spark JDBC) |
 | `resources/*.yml` + `databricks.yml` | Asset Bundle — deploys app + scheduled job, wires `database/lakebase-url` secret, exposes variables for locations/scope/key |
-| `.github/workflows/` | CI (test + validate) and CD (deploy to prod on merge to main) |
 
 ### Data source
 
